@@ -112,6 +112,8 @@ contract DelegateVoting {
     event SetupInitialized(bytes32 indexed RT, bytes signatureTA, bytes32 p_x, bytes32 p_y);
     event DelegateRegistered(address indexed delegate);
     event UnregisterDelegate(address indexed delegate, bool locked, bool active, uint256 balance, uint256 index);
+    event Vote(uint256 indexed proposalId, address indexed voter, uint256 support, string message, bytes32[4] vote);
+    event DecryptTally(uint256 indexed proposalID, bytes32 percent, bytes32 percent1, bytes32 percent2);
     event ElectionSetup(
         uint256 indexed proposalId,
         address proposer,
@@ -187,13 +189,15 @@ contract DelegateVoting {
         address signer = ECDSA.recover(ethHash, signatureTA_);
 
         // Compare to the TA’s public key-derived address
-        if (signer != address(uint160(uint256(_pkTA)))) revert Invalid_Signer();
+        if (signer != address(uint160(uint256(pkTA_)))) revert Invalid_Signer();
 
         pkTA = pkTA_;
         p_x = p_x_;
         p_y = p_y_;
         RT = _root;
         signatureTA = signatureTA_;
+
+
         initialized = true;
 
         emit SetupInitialized(_root, signatureTA_, p_x_, p_y_);
@@ -319,4 +323,124 @@ contract DelegateVoting {
         emit ElectionSetup(newProposal.id, msg.sender, startBlock, endBlock, description, title);
         return newProposal.id;
     }
+
+
+
+    function start_election(uint256 proposalID, bytes32 votingRoot,address[] memory delegates, string memory description) external{
+ require(
+            initialProposalId != 0,
+            "GovernorBravo::propose: Governor Bravo private not active"
+        );
+
+        for (uint i; i < delegates.length; i++){
+            require(active[delegates[i]]==true,"Delegates cannot be inactive");
+        }
+        require(msg.sender == proposals[proposalID].proposer, "You are not the original proposer of this proposal");
+        require(block.number >= proposals[proposalID].startBlock, "Trying to start election too early");
+        require(block.number <= proposals[proposalID].endBlock, "Trying to start election too late");
+        proposals[proposalID].snapshot = votingRoot;
+        proposals[proposalID].initialized = true;
+
+        
+
+    }
+    function vote(
+    Ciphertext memory ct,
+    bytes memory proof,
+    string memory message,
+    bytes32[12] memory rAdd,
+    uint8 support,
+    bytes32 root,
+    uint256 proposalID
+    ) external{
+
+          require(
+            initialProposalId != 0,
+            "GovernorBravo::propose: Governor Bravo private not active"
+        );
+        Proposal storage currentProposal = proposals[proposalID];
+        require(currentProposal.snapshot != bytes32(0), "There is not a valid snapshot for this election, it may not have been started");
+        require(token.isLocked(msg.sender), "Your tokens are not locked");
+        require(active[msg.sender], "You are not an active delegate");
+        require(!currentProposal.receipts[msg.sender].hasVoted, "You have already voted in this proposal");
+        require(support >= 0, "votes value must be 0,1, or 2 the input is negative");
+        require(support <= 2, "votes value must be 0,1, or 2 the input is > 2");
+        require(block.number >= proposals[proposalID].startBlock, "Trying to vote too early");
+        require(block.number <= proposals[proposalID].endBlock, "Trying to vote too late");
+
+        bytes32[] memory inputs= new bytes32[](30);
+
+       uint256 index=0;
+        for( uint256 i=0; i <rAdd.length; i++){
+            inputs[index]= rAdd[i];
+            index++;
+        }
+
+        inputs[index] = root;
+        index+=1;
+
+        
+    //    require(verifier.verify(proof, inputs, 4), "Invalid Proof");
+
+        /* count their vote*/
+        currentProposal.receipts[msg.sender].hasVoted = true;
+        currentProposal.receipts[msg.sender].support = support;
+
+        /* identify if it succeeded */
+        bytes32[4] memory resVote = [rAdd[8],rAdd[9],rAdd[10],rAdd[11]];
+        if (support == 0){
+            proposals[proposalID].forVotes = resVote;
+        } else if (support == 1){
+            proposals[proposalID].againstVotes = resVote;
+        } else if (support == 2){
+            proposals[proposalID].abstainVotes = resVote;
+        }
+
+        /* emit log */
+        emit Vote(proposalID, msg.sender, support, message, resVote);
+
+        }
+
+            function decrypt_tally(
+        uint proposalID,
+        bytes32[3] memory percents,
+        bytes memory proof
+    ) public {
+        Proposal storage p  = proposals[proposalID];
+        require(block.number >= p.endBlock, "election has not finished");
+
+        /* Verify proof*/
+        bytes32[] memory inputs = new bytes32[](17);
+        inputs[0] = p_x;
+        inputs[1] = p_y;
+        inputs[2] = p.forVotes[0];
+        inputs[3] = p.forVotes[1];
+        inputs[4] = p.forVotes[2];
+        inputs[5] = p.forVotes[3];
+        inputs[6] = p.againstVotes[0];
+        inputs[7] = p.againstVotes[1];
+        inputs[8] = p.againstVotes[2];
+        inputs[9] = p.againstVotes[3];
+        inputs[10] = p.abstainVotes[0];
+        inputs[11] = p.abstainVotes[1];
+        inputs[12] = p.abstainVotes[2];
+        inputs[13] = p.abstainVotes[3];
+        inputs[14] = percents[0];
+        inputs[15] = percents[1];
+        inputs[16] = percents[2];
+     //   require(verifier.verify(proof, inputs, 8), "Invalid Proof");
+
+        /* mark proposal as decrypted */
+        p.decrypted = true;
+        if (percents[0] > percents[1]){
+            p.successful = true;
+        }else{
+            p.successful = false;
+        }
+
+        /* emit */
+        emit DecryptTally(proposalID, percents[0], percents[1], percents[2]);
+    }
+
+    
 }
