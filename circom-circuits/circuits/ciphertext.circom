@@ -1,9 +1,8 @@
 
 pragma circom 2.1.6;
 
-// Includes (adjust paths if your node_modules layout differs)
 
-include "../node_modules/circomlib/circuits/babyjub.circom";
+
 include "../node_modules/circomlib/circuits/babyjub.circom";
 include "../node_modules/circomlib/circuits/bitify.circom";        // Num2Bits
 include "../node_modules/circomlib/circuits/escalarmulfix.circom"; // EscalarMulFix (fixed-base)
