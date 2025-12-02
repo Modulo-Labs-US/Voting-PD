@@ -32,7 +32,8 @@ contract DelegateVoting {
     mapping(address => mapping(uint256 => bytes32[4])) public l_d; // multi-slot per delegate
     mapping(address => bytes32) public l_did;
     mapping(address => uint256) public l_d_index;
-    bytes32[4][] public l_d_array; // array storage fallback
+    uint256 index_length;
+    // bytes32[4][] public l_d_array; // array storage fallback
     mapping(address => bool) public active;
 
     mapping(address => bool) public lockedTokens;
@@ -111,7 +112,7 @@ contract DelegateVoting {
     // ==========================
     event SetupInitialized(bytes32 indexed RT, bytes signatureTA, bytes32 p_x, bytes32 p_y);
     event DelegateRegistered(address indexed delegate);
-    event UnregisterDelegate(address indexed delegate, bool locked, bool active, uint256 balance, uint256 index);
+    event UnregisterDelegate(address indexed delegate, bool locked, bool active, uint256 index);
     event Vote(uint256 indexed proposalId, address indexed voter, uint256 support, string message, bytes32[4] vote);
     event DecryptTally(uint256 indexed proposalID, bytes32 percent, bytes32 percent1, bytes32 percent2);
     event ElectionSetup(
@@ -197,7 +198,6 @@ contract DelegateVoting {
         RT = _root;
         signatureTA = signatureTA_;
 
-
         initialized = true;
 
         emit SetupInitialized(_root, signatureTA_, p_x_, p_y_);
@@ -206,35 +206,46 @@ contract DelegateVoting {
     // ==========================
     // Delegate Registration
     // ==========================
-    function delegateRegistration(Ciphertext calldata ct, bytes memory proof, bytes32 balance) external {
+    function delegateRegistration(Ciphertext calldata ct, bytes memory proof) external {
         if (!initialized) revert Not_Initialized();
         if (token.isLocked(msg.sender)) revert TokenLockedCannotRegister();
         if (active[msg.sender]) revert DelegateCannotBeActive();
 
-        bytes32[] memory inputs = new bytes32[](7);
+        bytes32[] memory inputs = new bytes32[](6);
         inputs[0] = p_x;
         inputs[1] = p_y;
-        inputs[1] = balance;
+        // inputs[1] = balance;
         inputs[2] = ct.e_x;
         inputs[3] = ct.e_y;
         inputs[4] = ct.v_x;
         inputs[5] = ct.v_y;
 
+        // we need to check if the ciphertext is correctly generated here
+        // we only need to check if the ciphertext is formed correctly here
         // we need to verify the ct if they are part of proof or sth
         //  verifier.verify(proof, inputs, 3);
 
         active[msg.sender] = true;
-
+        // The design is such that we need to track the index
         if (l_d_index[msg.sender] == 0) {
-            l_d_index[msg.sender] = l_d_array.length + 1;
-        }
-        uint256 sender_index = l_d_index[msg.sender] - 1;
+            l_d_index[msg.sender] = index_length;
 
-        if (sender_index == l_d_array.length) {
+            //    l_d_index[msg.sender] = l_d_array.length + 1;
+
+            uint256 sender_index = l_d_index[msg.sender] - 1;
+
             l_d[msg.sender][sender_index] = [ct.e_x, ct.e_y, ct.v_x, ct.v_y];
+
+            index_length++;
         } else {
+            uint256 sender_index = l_d_index[msg.sender] - 1;
             l_d[msg.sender][sender_index] = [ct.e_x, ct.e_y, ct.v_x, ct.v_y];
         }
+        // if (sender_index == l_d_array.length) {
+        //     l_d[msg.sender][sender_index] = [ct.e_x, ct.e_y, ct.v_x, ct.v_y];
+        // } else {
+        //     l_d[msg.sender][sender_index] = [ct.e_x, ct.e_y, ct.v_x, ct.v_y];
+        // }
 
         emit DelegateRegistered(msg.sender);
     }
@@ -242,21 +253,21 @@ contract DelegateVoting {
     // ==========================
     // Delegate Unregistration
     // ==========================
-    function delegateUnRegistered(
-        Ciphertext calldata ct_old,
-        Ciphertext calldata ct_new,
-        bytes memory proof,
-        bytes32 balance
-    ) external {
+    function delegateUnRegistered(Ciphertext calldata ct_old, Ciphertext calldata ct_new, bytes memory proof)
+        external
+    {
         if (!active[msg.sender]) revert DelegateMustBeActive();
         if (!token.isLocked(msg.sender)) revert TokenMustBeLockBeforeUnRegistering();
 
-        bytes32[] memory inputs = new bytes32[](9);
-        inputs[0] = ct_old.e_x;
-        inputs[1] = ct_old.e_y;
-        inputs[2] = ct_old.v_x;
-        inputs[3] = ct_old.v_y;
-        inputs[4] = balance;
+        // bytes32[] memory inputs = new bytes32[](9);
+        bytes32[] memory inputs = new bytes32[](6);
+        inputs[0] = p_x;
+        inputs[1] = p_y;
+        inputs[2] = ct_old.e_x;
+        inputs[3] = ct_old.e_y;
+        inputs[4] = ct_old.v_x;
+        inputs[5] = ct_old.v_y;
+        //  inputs[4] = balance;
         inputs[5] = ct_new.e_x;
         inputs[6] = ct_new.e_y;
         inputs[7] = ct_new.v_x;
@@ -269,10 +280,10 @@ contract DelegateVoting {
         // require(!Token._locked[msg.sender], "token could not unlock");
 
         uint256 sender_index = l_d_index[msg.sender] - 1;
-        l_d_array[sender_index] = [ct_new.e_x, ct_new.e_y, ct_new.v_x, ct_new.v_y];
+         l_d[msg.sender][sender_index]  = [ct_new.e_x, ct_new.e_y, ct_new.v_x, ct_new.v_y];
 
         emit UnregisterDelegate(
-            msg.sender, token.isLocked(msg.sender), active[msg.sender], uint256(balance), sender_index
+            msg.sender, token.isLocked(msg.sender), active[msg.sender], sender_index
         );
     }
 
@@ -324,42 +335,39 @@ contract DelegateVoting {
         return newProposal.id;
     }
 
+    function start_election(
+        uint256 proposalID,
+        bytes32 votingRoot,
+        address[] memory delegates,
+        string memory description
+    ) external {
+        require(initialProposalId != 0, "GovernorBravo::propose: Governor Bravo private not active");
 
-
-    function start_election(uint256 proposalID, bytes32 votingRoot,address[] memory delegates, string memory description) external{
- require(
-            initialProposalId != 0,
-            "GovernorBravo::propose: Governor Bravo private not active"
-        );
-
-        for (uint i; i < delegates.length; i++){
-            require(active[delegates[i]]==true,"Delegates cannot be inactive");
+        for (uint256 i; i < delegates.length; i++) {
+            require(active[delegates[i]] == true, "Delegates cannot be inactive");
         }
         require(msg.sender == proposals[proposalID].proposer, "You are not the original proposer of this proposal");
         require(block.number >= proposals[proposalID].startBlock, "Trying to start election too early");
         require(block.number <= proposals[proposalID].endBlock, "Trying to start election too late");
         proposals[proposalID].snapshot = votingRoot;
         proposals[proposalID].initialized = true;
-
-        
-
     }
-    function vote(
-    Ciphertext memory ct,
-    bytes memory proof,
-    string memory message,
-    bytes32[12] memory rAdd,
-    uint8 support,
-    bytes32 root,
-    uint256 proposalID
-    ) external{
 
-          require(
-            initialProposalId != 0,
-            "GovernorBravo::propose: Governor Bravo private not active"
-        );
+    function vote(
+        Ciphertext memory ct,
+        bytes memory proof,
+        string memory message,
+        bytes32[8] memory rAdd,
+        uint8 support,
+        bytes32 root,
+        uint256 proposalID
+    ) external {
+        require(initialProposalId != 0, "GovernorBravo::propose: Governor Bravo private not active");
         Proposal storage currentProposal = proposals[proposalID];
-        require(currentProposal.snapshot != bytes32(0), "There is not a valid snapshot for this election, it may not have been started");
+        require(
+            currentProposal.snapshot != bytes32(0),
+            "There is not a valid snapshot for this election, it may not have been started"
+        );
         require(token.isLocked(msg.sender), "Your tokens are not locked");
         require(active[msg.sender], "You are not an active delegate");
         require(!currentProposal.receipts[msg.sender].hasVoted, "You have already voted in this proposal");
@@ -368,45 +376,44 @@ contract DelegateVoting {
         require(block.number >= proposals[proposalID].startBlock, "Trying to vote too early");
         require(block.number <= proposals[proposalID].endBlock, "Trying to vote too late");
 
-        bytes32[] memory inputs= new bytes32[](30);
+        bytes32[] memory inputs = new bytes32[](26);
 
-       uint256 index=0;
-        for( uint256 i=0; i <rAdd.length; i++){
-            inputs[index]= rAdd[i];
+        uint256 index = 0;
+        for (uint256 i = 0; i < rAdd.length; i++) {
+            inputs[index] = rAdd[i];
             index++;
         }
 
         inputs[index] = root;
-        index+=1;
+        index += 1;
 
-        
-    //    require(verifier.verify(proof, inputs, 4), "Invalid Proof");
+        //    require(verifier.verify(proof, inputs, 4), "Invalid Proof");
 
         /* count their vote*/
         currentProposal.receipts[msg.sender].hasVoted = true;
         currentProposal.receipts[msg.sender].support = support;
 
         /* identify if it succeeded */
-        bytes32[4] memory resVote = [rAdd[8],rAdd[9],rAdd[10],rAdd[11]];
-        if (support == 0){
-            proposals[proposalID].forVotes = resVote;
-        } else if (support == 1){
-            proposals[proposalID].againstVotes = resVote;
-        } else if (support == 2){
-            proposals[proposalID].abstainVotes = resVote;
+        bytes32[4] memory resVote = [rAdd[4], rAdd[5], rAdd[6], rAdd[7]];
+        for (uint256 i = 0; i < 4; i++) {
+            if (support == 0) {
+                currentProposal.forVotes[i] = _add(currentProposal.forVotes[i], resVote[i]);
+            } else if (support == 1) {
+                currentProposal.againstVotes[i] = _add(currentProposal.againstVotes[i], resVote[i]);
+            } else {
+                currentProposal.abstainVotes[i] = _add(currentProposal.abstainVotes[i], resVote[i]);
+            }
         }
 
-        /* emit log */
         emit Vote(proposalID, msg.sender, support, message, resVote);
+    }
 
-        }
+    function _add(bytes32 a, bytes32 b) internal pure returns (bytes32) {
+        return bytes32(uint256(a) + uint256(b));
+    }
 
-            function decrypt_tally(
-        uint proposalID,
-        bytes32[3] memory percents,
-        bytes memory proof
-    ) public {
-        Proposal storage p  = proposals[proposalID];
+    function decrypt_tally(uint256 proposalID, bytes32[3] memory percents, bytes memory proof) public {
+        Proposal storage p = proposals[proposalID];
         require(block.number >= p.endBlock, "election has not finished");
 
         /* Verify proof*/
@@ -428,19 +435,17 @@ contract DelegateVoting {
         inputs[14] = percents[0];
         inputs[15] = percents[1];
         inputs[16] = percents[2];
-     //   require(verifier.verify(proof, inputs, 8), "Invalid Proof");
+        //   require(verifier.verify(proof, inputs, 8), "Invalid Proof");
 
         /* mark proposal as decrypted */
         p.decrypted = true;
-        if (percents[0] > percents[1]){
+        if (percents[0] > percents[1]) {
             p.successful = true;
-        }else{
+        } else {
             p.successful = false;
         }
 
         /* emit */
         emit DecryptTally(proposalID, percents[0], percents[1], percents[2]);
     }
-
-    
 }
