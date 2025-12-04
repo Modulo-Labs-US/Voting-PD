@@ -87,12 +87,12 @@ template ScalarMul(nBits) {
 // -----------------------------
 template ElGamalCheck() {
     // public inputs: ciphertext and public key
-    signal input C1x;
-    signal input C1y;
-    signal input C2x;
-    signal input C2y;
-    signal input PKx;
-    signal input PKy;
+    signal input   C1x;
+    signal input  C1y;
+    signal input  C2x;
+    signal input  C2y;
+    signal input  PKx;
+    signal input  PKy;
 
     // private inputs: scalars r and m (field elements)
     signal input r;
@@ -182,4 +182,4 @@ signal My <== mG.out[1];
     C2y === Vy;
 }
 
-component main = ElGamalCheck();
+component main{ public [C1x,C2x,C1y,C2y,PKx,PKy]} = ElGamalCheck();

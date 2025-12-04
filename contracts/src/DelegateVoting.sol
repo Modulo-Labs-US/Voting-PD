@@ -5,6 +5,7 @@ import "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.so
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import {Token} from "./tokens/Token.sol";
+import {Groth16Verifier} from "./verifier.sol";
 
 /**
  * @title DelegateVoting
@@ -15,6 +16,7 @@ contract DelegateVoting {
     using MessageHashUtils for bytes32;
 
     Token public token;
+    Groth16Verifier public verifier;
     // ==========================
     // State Variables
     // ==========================
@@ -32,6 +34,7 @@ contract DelegateVoting {
     mapping(address => mapping(uint256 => bytes32[4])) public l_d; // multi-slot per delegate
     mapping(address => bytes32) public l_did;
     mapping(address => uint256) public l_d_index;
+    mapping(address => bool) private hasIndex;
     uint256 index_length;
     // bytes32[4][] public l_d_array; // array storage fallback
     mapping(address => bool) public active;
@@ -150,7 +153,7 @@ contract DelegateVoting {
 
         // timelock = TimelockInterface(timelock_);
         //token = TokenInt(token_);
-        token = Token(token);
+        token = Token(token_);
         votingPeriod = votingPeriod_;
         votingDelay = votingDelay_;
         proposalThreshold = proposalThreshold_;
@@ -180,7 +183,9 @@ contract DelegateVoting {
     //     emit SetupInitialized(_root, signatureTA_, p_x_, p_y_);
     // }
 
-    function setup(bytes32 pkTA_, bytes32 p_x_, bytes32 p_y_, bytes32 _root, bytes memory signatureTA_) external {
+    function setup(address tA_, bytes32 pkTA_, bytes32 p_x_, bytes32 p_y_, bytes32 _root, bytes memory signatureTA_)
+        external
+    {
         if (initialized) revert Setup_Initialized();
 
         // Compute Ethereum-signed message hash
@@ -189,8 +194,8 @@ contract DelegateVoting {
         // Correct: recover signer from signature
         address signer = ECDSA.recover(ethHash, signatureTA_);
 
-        // Compare to the TA’s public key-derived address
-        if (signer != address(uint160(uint256(pkTA_)))) revert Invalid_Signer();
+        // check if the signer is a correct signer
+        if (signer != tA_) revert Invalid_Signer();
 
         pkTA = pkTA_;
         p_x = p_x_;
@@ -206,20 +211,32 @@ contract DelegateVoting {
     // ==========================
     // Delegate Registration
     // ==========================
-    function delegateRegistration(Ciphertext calldata ct, bytes memory proof) external {
+    function delegateRegistration(
+        Ciphertext calldata ct,
+        uint256[2] calldata pA,
+        uint256[2][2] calldata pB,
+        uint256[2] calldata pC,
+        bytes32[6] calldata pubSignals
+    ) external {
         if (!initialized) revert Not_Initialized();
         if (token.isLocked(msg.sender)) revert TokenLockedCannotRegister();
         if (active[msg.sender]) revert DelegateCannotBeActive();
 
-        bytes32[] memory inputs = new bytes32[](6);
-        inputs[0] = p_x;
-        inputs[1] = p_y;
-        // inputs[1] = balance;
-        inputs[2] = ct.e_x;
-        inputs[3] = ct.e_y;
-        inputs[4] = ct.v_x;
-        inputs[5] = ct.v_y;
+        // bytes32[] memory inputs = new bytes32[](6);
+        // inputs[0] = p_x;
+        // inputs[1] = p_y;
+        // // inputs[1] = balance;
+        // inputs[2] = ct.e_x;
+        // inputs[3] = ct.e_y;
+        // inputs[4] = ct.v_x;
+        // inputs[5] = ct.v_y;
 
+        uint256[6] memory pub;
+        for (uint256 i = 0; i < 6; i++) {
+            pub[i] = uint256(pubSignals[i]);
+        }
+
+        require(verifier.verifyProof(pA, pB, pC, pub), "invalid proof");
         // we need to check if the ciphertext is correctly generated here
         // we only need to check if the ciphertext is formed correctly here
         // we need to verify the ct if they are part of proof or sth
@@ -227,19 +244,19 @@ contract DelegateVoting {
 
         active[msg.sender] = true;
         // The design is such that we need to track the index
-        if (l_d_index[msg.sender] == 0) {
+        if (!hasIndex[msg.sender]) {
             l_d_index[msg.sender] = index_length;
 
             //    l_d_index[msg.sender] = l_d_array.length + 1;
 
-            uint256 sender_index = l_d_index[msg.sender] - 1;
+            // uint256 sender_index = l_d_index[msg.sender] - 1;
 
-            l_d[msg.sender][sender_index] = [ct.e_x, ct.e_y, ct.v_x, ct.v_y];
+            l_d[msg.sender][index_length] = [ct.e_x, ct.e_y, ct.v_x, ct.v_y];
 
             index_length++;
         } else {
-            uint256 sender_index = l_d_index[msg.sender] - 1;
-            l_d[msg.sender][sender_index] = [ct.e_x, ct.e_y, ct.v_x, ct.v_y];
+            uint256 idx = l_d_index[msg.sender];
+            l_d[msg.sender][idx] = [ct.e_x, ct.e_y, ct.v_x, ct.v_y];
         }
         // if (sender_index == l_d_array.length) {
         //     l_d[msg.sender][sender_index] = [ct.e_x, ct.e_y, ct.v_x, ct.v_y];
@@ -253,38 +270,49 @@ contract DelegateVoting {
     // ==========================
     // Delegate Unregistration
     // ==========================
-    function delegateUnRegistered(Ciphertext calldata ct_old, Ciphertext calldata ct_new, bytes memory proof)
-        external
-    {
+    function delegateUnRegistered(
+        Ciphertext calldata ct_old,
+        Ciphertext calldata ct_new,
+        uint256[2] calldata pA,
+        uint256[2][2] calldata pB,
+        uint256[2] calldata pC,
+        bytes32[6] calldata pubSignals
+    ) external {
         if (!active[msg.sender]) revert DelegateMustBeActive();
         if (!token.isLocked(msg.sender)) revert TokenMustBeLockBeforeUnRegistering();
 
         // bytes32[] memory inputs = new bytes32[](9);
-        bytes32[] memory inputs = new bytes32[](6);
-        inputs[0] = p_x;
-        inputs[1] = p_y;
-        inputs[2] = ct_old.e_x;
-        inputs[3] = ct_old.e_y;
-        inputs[4] = ct_old.v_x;
-        inputs[5] = ct_old.v_y;
-        //  inputs[4] = balance;
-        inputs[5] = ct_new.e_x;
-        inputs[6] = ct_new.e_y;
-        inputs[7] = ct_new.v_x;
-        inputs[8] = ct_new.v_y;
+        // bytes32[] memory inputs = new bytes32[](6);
+        // inputs[0] = p_x;
+        // inputs[1] = p_y;
+        // inputs[2] = ct_old.e_x;
+        // inputs[3] = ct_old.e_y;
+        // inputs[4] = ct_old.v_x;
+        // inputs[5] = ct_old.v_y;
+        // //  inputs[4] = balance;
+        // inputs[5] = ct_new.e_x;
+        // inputs[6] = ct_new.e_y;
+        // inputs[7] = ct_new.v_x;
+        // inputs[8] = ct_new.v_y;
+
+        uint256[6] memory pub;
+        for (uint256 i = 0; i < 6; i++) {
+            pub[i] = uint256(pubSignals[i]);
+        }
+
+        require(verifier.verifyProof(pA, pB, pC, pub), "invalid proof");
 
         // we need to verify the ciphertext if they are part of proof or sth
         //  require(verifier.verify(proof, inputs, 6), "Invalid Proof");
+        //    require( verifier.verifyProof(proof, inputs,6), "invalid proof");
 
         active[msg.sender] = false;
         // require(!Token._locked[msg.sender], "token could not unlock");
 
-        uint256 sender_index = l_d_index[msg.sender] - 1;
-         l_d[msg.sender][sender_index]  = [ct_new.e_x, ct_new.e_y, ct_new.v_x, ct_new.v_y];
+        uint256 idx = l_d_index[msg.sender];
+        l_d[msg.sender][idx] = [ct_new.e_x, ct_new.e_y, ct_new.v_x, ct_new.v_y];
 
-        emit UnregisterDelegate(
-            msg.sender, token.isLocked(msg.sender), active[msg.sender], sender_index
-        );
+        emit UnregisterDelegate(msg.sender, token.isLocked(msg.sender), active[msg.sender], sender_index);
     }
 
     // ==========================
@@ -335,12 +363,7 @@ contract DelegateVoting {
         return newProposal.id;
     }
 
-    function start_election(
-        uint256 proposalID,
-        bytes32 votingRoot,
-        address[] memory delegates,
-        string memory description
-    ) external {
+    function start_election(uint256 proposalID, address[] memory delegates, string memory description) external {
         require(initialProposalId != 0, "GovernorBravo::propose: Governor Bravo private not active");
 
         for (uint256 i; i < delegates.length; i++) {
@@ -349,15 +372,18 @@ contract DelegateVoting {
         require(msg.sender == proposals[proposalID].proposer, "You are not the original proposer of this proposal");
         require(block.number >= proposals[proposalID].startBlock, "Trying to start election too early");
         require(block.number <= proposals[proposalID].endBlock, "Trying to start election too late");
-        proposals[proposalID].snapshot = votingRoot;
+        //   proposals[proposalID].snapshot = votingRoot;
         proposals[proposalID].initialized = true;
     }
 
+    // we are using a merkle tree to include all the ciphertext here
+
+    // ct has four elements
     function vote(
         Ciphertext memory ct,
-        bytes memory proof,
+        bytes32[] memory proof,
         string memory message,
-        bytes32[8] memory rAdd,
+        bytes32[4] memory rAdd, // holds ct for easy addition
         uint8 support,
         bytes32 root,
         uint256 proposalID
@@ -376,25 +402,26 @@ contract DelegateVoting {
         require(block.number >= proposals[proposalID].startBlock, "Trying to vote too early");
         require(block.number <= proposals[proposalID].endBlock, "Trying to vote too late");
 
-        bytes32[] memory inputs = new bytes32[](26);
+        // bytes32[] memory inputs = new bytes32[](26);
 
-        uint256 index = 0;
-        for (uint256 i = 0; i < rAdd.length; i++) {
-            inputs[index] = rAdd[i];
-            index++;
-        }
+        // uint256 index = 0;
+        // for (uint256 i = 0; i < rAdd.length; i++) {
+        //     inputs[index] = rAdd[i];
+        //     index++;
+        // }
 
-        inputs[index] = root;
-        index += 1;
+        // inputs[index] = root;
+        // index += 1;
 
         //    require(verifier.verify(proof, inputs, 4), "Invalid Proof");
 
         /* count their vote*/
-        currentProposal.receipts[msg.sender].hasVoted = true;
-        currentProposal.receipts[msg.sender].support = support;
+
+        bytes32 leaf = keccak256(abi.encode(ct.e_x, ct.e_y, ct.v_x, ct.v_y));
+        require(_verifyMerkleProof(leaf, proof, root), "invalid merkle tree");
 
         /* identify if it succeeded */
-        bytes32[4] memory resVote = [rAdd[4], rAdd[5], rAdd[6], rAdd[7]];
+        bytes32[4] memory resVote = [rAdd[0], rAdd[1], rAdd[2], rAdd[3]];
         for (uint256 i = 0; i < 4; i++) {
             if (support == 0) {
                 currentProposal.forVotes[i] = _add(currentProposal.forVotes[i], resVote[i]);
@@ -405,47 +432,72 @@ contract DelegateVoting {
             }
         }
 
+        currentProposal.receipts[msg.sender].hasVoted = true;
+        currentProposal.receipts[msg.sender].support = support;
+
         emit Vote(proposalID, msg.sender, support, message, resVote);
+    }
+
+    function _verifyMerkleProof(bytes32 leaf, bytes32[] memory proof, bytes32 root) internal pure returns (bool) {
+        bytes32 hash = leaf;
+
+        for (uint256 i = 0; i < proof.length; i++) {
+            bytes32 el = proof[i];
+
+            if (hash < el) {
+                hash = keccak256(abi.encodePacked(hash, el));
+            } else {
+                hash = keccak256(abi.encodePacked(el, hash));
+            }
+        }
+        return hash == root;
     }
 
     function _add(bytes32 a, bytes32 b) internal pure returns (bytes32) {
         return bytes32(uint256(a) + uint256(b));
     }
 
-    function decrypt_tally(uint256 proposalID, bytes32[3] memory percents, bytes memory proof) public {
+    // only the TA shoud be able to call it like we need to verify that it is the Ta that actually calls it
+    function decrypt_tally(
+        uint256 proposalID,
+        bytes32[4] memory forVotes,
+        bytes32[4] memory againstVotes,
+        bytes32[4] memory abstainVotes
+    ) public {
         Proposal storage p = proposals[proposalID];
         require(block.number >= p.endBlock, "election has not finished");
 
-        /* Verify proof*/
-        bytes32[] memory inputs = new bytes32[](17);
-        inputs[0] = p_x;
-        inputs[1] = p_y;
-        inputs[2] = p.forVotes[0];
-        inputs[3] = p.forVotes[1];
-        inputs[4] = p.forVotes[2];
-        inputs[5] = p.forVotes[3];
-        inputs[6] = p.againstVotes[0];
-        inputs[7] = p.againstVotes[1];
-        inputs[8] = p.againstVotes[2];
-        inputs[9] = p.againstVotes[3];
-        inputs[10] = p.abstainVotes[0];
-        inputs[11] = p.abstainVotes[1];
-        inputs[12] = p.abstainVotes[2];
-        inputs[13] = p.abstainVotes[3];
-        inputs[14] = percents[0];
-        inputs[15] = percents[1];
-        inputs[16] = percents[2];
-        //   require(verifier.verify(proof, inputs, 8), "Invalid Proof");
-
-        /* mark proposal as decrypted */
+        // mapping each votes to the result
+        for (uint256 i = 0; i < 4; i++) {
+            forVotes[i] = p.forVotes[i];
+            againstVotes[i] = p.againstVotes[i];
+            abstainVotes[i] = p.abstainVotes[i];
+        } /* mark proposal as decrypt*/
         p.decrypted = true;
-        if (percents[0] > percents[1]) {
+
+        // we are working in prime field
+        uint256 countFor;
+        uint256 countAgainst;
+        for (uint256 i = 0; i < 4; i++) {
+            if (forVotes[i] > againstVotes[i]) {
+                countFor++;
+            } else {
+                countAgainst++;
+            }
+        }
+
+        if (countFor > countAgainst) {
             p.successful = true;
         } else {
             p.successful = false;
         }
+        // if (percents[0] > percents[1]) {
+        //     p.successful = true;
+        // } else {
+        //     p.successful = false;
+        // }
 
         /* emit */
-        emit DecryptTally(proposalID, percents[0], percents[1], percents[2]);
+        // emit DecryptTally(proposalID, percents[0], percents[1], percents[2]);
     }
 }
