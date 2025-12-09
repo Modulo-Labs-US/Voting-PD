@@ -54,7 +54,7 @@ Admin configures election:
 
 * Merkle root of delegates
 * ElGamal public key
-* Voting time windows
+  
 
 **Solidity:**
 `electionSetup(bytes32 root, PubKey pubkey, address)`
