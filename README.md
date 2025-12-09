@@ -8,7 +8,7 @@ A **privacy-preserving delegate voting system** built using:
 * **Zero-knowledge SNARK proofs (Circom + SnarkJS)**
 * **Merkle tree membership verification**
 * **Solidity smart contracts**
-* **Private ballot casting + verifiable tally decryption**
+* **Private delegation+ verifiable tally decryption**
 
 ---
 ##  System Overview
