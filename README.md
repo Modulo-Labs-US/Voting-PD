@@ -1,6 +1,6 @@
 
 
-# 🗳️ Private Delegate Voting (ZK + ElGamal + Merkle)
+#  Private Delegate Voting (ZK + ElGamal + Merkle)
 
 A **privacy-preserving delegate voting system** built using:
 
@@ -10,11 +10,8 @@ A **privacy-preserving delegate voting system** built using:
 * **Solidity smart contracts**
 * **Private ballot casting + verifiable tally decryption**
 
-This repository contains all components required to run a secure private voting session end-to-end.
-
 ---
-
-## 📌 System Overview
+##  System Overview
 
 This system allows participants to:
 
@@ -23,11 +20,7 @@ This system allows participants to:
 * Register as delegates using 
 * Aggregate encrypted votes on-chain using **homomorphic addition**
 * Verify the final decryptions with **ZK decryption proofs**
-
-
-
-## 🧱 Architecture
-
+##  Architecture
 ```
 Admin ───────► electionSetup()
                  │
@@ -43,10 +36,7 @@ Admin ───────► electionSetup()
                  ▼
         decryptTally() ◄──── Decryptors (Trusted Authority)
 ```
-
----
-
-## 👥 Actors
+##  Actors and role 
 
 | Actor              | Role                                                |
 | ------------------ | --------------------------------------------------- |
@@ -58,9 +48,7 @@ Admin ───────► electionSetup()
 
 ---
 
-## 🔄 Protocol Phases
-
-### 1️⃣ Setup
+### 1 Setup
 
 Admin configures election:
 
@@ -73,15 +61,15 @@ Admin configures election:
 
 ---
 
-### 2️⃣ Delegate Registration
+### 2 Delegate Registration
 
 Delegate submits  proof to register and that the ciphertext is correctly generated . The delegates might also choose to unregister 
 
 ---
-### 3️⃣ Delegation 
+### 3 Delegation 
 Delegate delegates his/her votes privately to other delegates, there is a proof of correct delegation to ensure that the vote is delegated correctly
 
-### 4️⃣ Voting
+### 4 Voting
 
 The votes is encrypted using elgammal proof as a ciphertext :
 
@@ -94,25 +82,21 @@ The votes is encrypted using elgammal proof as a ciphertext :
 
 ---
 
-### 4️⃣ Tallying
+### 5 Tallying
 
 Contract homomorphically adds ciphertexts.
 
 **Solidity:**
 `_add()` (internal)
-
 ---
 
-### 5️⃣ Decryption
-
+### 6 Decryption
  This should be done by the Trusted Authority.
-
 **Solidity:**
 `decryptTally(bytes32[3] percents, bytes proof)`
-
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 project/
@@ -137,13 +121,10 @@ project/
 │
 
 ## 🔧 Interacting With the Contracts
-
 ### Delegate Registration
-
 ```solidity
 delegateRegistration(proof);
 ```
-
 ### Submit Vote
 
 ```solidity
@@ -157,35 +138,15 @@ vote(
     proposalID
 );
 ```
-
 ### Decrypt Tally
 
 ```solidity
 decryptTally(percents, proof);
 ```
-
----
-
-## 🔐 Security Considerations
-
-* Votes remain private using ElGamal + ZK proofs
-* Delegates must prove membership in Merkle tree
-* No double voting due to on-chain tracking
-* Tally decryption must include a ZK-proof
-* Homomorphic addition prevents tampering with encrypted votes
-* Public inputs are bound to:
-
-  * proposal ID
-  * Merkle root
-  * ciphertext 
-
----
-
-## ✅ Features
+##  Features
 
 * Private encrypted voting
 * ZK-proof verification on-chain
 * Homomorphic tally computation
 * Verifiable decryption
-
 ---
