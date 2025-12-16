@@ -125,7 +125,15 @@ contract DelegateVoting {
         uint256 endBlock,
         string description,
         string title
+    ); 
+    event Delegation(
+        address indexed delegator,
+        bytes32 e_x,
+        bytes32 e_y,
+        bytes32 v_x,
+        bytes32 v_y
     );
+
 
     // ==========================
     // Errors
@@ -376,6 +384,32 @@ contract DelegateVoting {
         proposals[proposalID].initialized = true;
     }
 
+    function delegate(
+        Ciphertext calldata ct,
+        uint256[2] calldata pA,
+        uint256[2][2] calldata pB,
+        uint256[2] calldata pC,
+        bytes32[6] calldata pubSignals
+    ) external {
+        if (!initialized) revert Not_Initialized();
+        require(token.isLocked(msg.sender), "Your tokens are not locked");
+
+        uint256[6] memory pub;
+        for (uint256 i = 0; i < 6; i++) {
+            pub[i] = uint256(pubSignals[i]);
+        }
+
+        require(delegate_verifier.verifyProof(pA, pB, pC, pub), "Invalid delegation proof");
+
+        active[msg.sender] = true;
+
+        // add in the ciphertext beforehand, verify this was done in zkp
+        Ld[msg.sender] = [ct.e_x, ct.e_y, ct.v_x, ct.v_y]; 
+        l_did[msg.sender] = keccak256(abi.encodePacked(delegateAddress)); // Unique identifier for the delegation
+
+        emit Delegation(msg.sender, ct.e_x, ct.e_y, ct.v_x, ct.v_y);
+    }
+
     // we are using a merkle tree to include all the ciphertext here
 
     // ct has four elements
@@ -385,7 +419,7 @@ contract DelegateVoting {
         string memory message,
         bytes32[4] memory rAdd, // holds ct for easy addition
         uint8 support,
-        bytes32 root,
+        bytes32 root, // supposed to be the root of Ld (election powers)
         uint256 proposalID
     ) external {
         require(initialProposalId != 0, "GovernorBravo::propose: Governor Bravo private not active");
