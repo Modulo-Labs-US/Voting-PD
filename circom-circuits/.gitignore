@@ -1,1 +1,37 @@
-* node_modules
+# --------------------
+# Node
+# --------------------
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# --------------------
+# Circom / snarkjs outputs
+# --------------------
+*.r1cs
+*.sym
+*.wasm
+*_js/
+*.wtns
+
+# --------------------
+# Proofs & verification artifacts
+# --------------------
+proof.json
+public.json
+verification_key.json
+*.zkey
+*.ptau
+
+# --------------------
+# Build / output folders
+# --------------------
+outputs/
+build/
+build2/
+
+# --------------------
+# OS / Editor junk
+# --------------------
+.DS_Store
+.vscode/
