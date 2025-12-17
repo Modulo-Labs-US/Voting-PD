@@ -250,7 +250,9 @@ contract DelegateVoting {
         // we need to verify the ct if they are part of proof or sth
         //  verifier.verify(proof, inputs, 3);
 
+// lock the token here 
         active[msg.sender] = true;
+        token.isLocked(msg.sender);
         // The design is such that we need to track the index
         if (!hasIndex[msg.sender]) {
             l_d_index[msg.sender] = index_length;
@@ -271,7 +273,7 @@ contract DelegateVoting {
         // } else {
         //     l_d[msg.sender][sender_index] = [ct.e_x, ct.e_y, ct.v_x, ct.v_y];
         // }
-
+// lock the token at the end 
         emit DelegateRegistered(msg.sender);
     }
 

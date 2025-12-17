@@ -6,7 +6,7 @@ pragma circom 2.1.6;
 include "../node_modules/circomlib/circuits/babyjub.circom";
 include "../node_modules/circomlib/circuits/bitify.circom";        // Num2Bits
 include "../node_modules/circomlib/circuits/escalarmulfix.circom"; // EscalarMulFix (fixed-base)
- 
+include "../node_modules/circomlib/circuits/comparators.circom"; 
 // -----------------------------
 // Variable-base scalar mul (double-and-add)
 // -----------------------------
@@ -85,6 +85,8 @@ template ScalarMul(nBits) {
 // C1 = r*G
 // C2 = m*G + r*PK
 // -----------------------------
+
+
 template ElGamalCheck() {
     // public inputs: ciphertext and public key
     signal input   C1x;
@@ -98,18 +100,14 @@ template ElGamalCheck() {
     signal input r;
     signal input m;
 
-    // --- Constants: Generator G in twisted edwards (same as in library)
-    // var BASE8 = [
-    //     5299619240641551281634865583518297030282874472190772894086521144482721001553,
-    //     16950150798460657717958625567821834550301663161624707787222815936182638968203
-    // ];
+// Generator points in edward curve 
  var Gx = 5299619240641551281634865583518297030282874472190772894086521144482721001553;
   var Gy = 16950150798460657717958625567821834550301663161624707787222815936182638968203;
 
-// var G = [
-//     5299619240641551281634865583518297030282874472190772894086521144482721001553,
-//     16950150798460657717958625567821834550301663161624707787222815936182638968203
-// ];
+// check if m is not zero 
+component isZero= IsZero();
+isZero.in<==m;
+isZero.out===0;
 
     // r bits
     component rBits = Num2Bits(253);
@@ -119,20 +117,6 @@ template ElGamalCheck() {
     component mBits = Num2Bits(253);
     mBits.in <== m;
 
-    // --- r * G (fixed base)
-//     component rG = EscalarMulFix(253, G);
-// for (var i = 0; i < 253; i++) {
-//     rG.e[i] <== rBits.out[i];
-// }
-// signal Rx <== rG.out[0];
-// signal Ry <== rG.out[1];
-
-    // -----------------------------
-    // r * G  (use EscalarMulFix with r bits)
-    // EscalarMulFix expects an array of bits; we derive them with Num2Bits
-    // -----------------------------
-    // component rBits = Num2Bits(253);
-    // rBits.in <== r;
 
 component rG = EscalarMulFix(253, [Gx,Gy]);
 for (var i = 0; i < 253; i++) {
@@ -153,6 +137,11 @@ for (var i = 0; i < 253; i++) {
 }
 signal Mx <== mG.out[0];
 signal My <== mG.out[1];
+
+// Baby check for the public keys 
+component PkCheck = BabyCheck();
+PkCheck.x<==PKx;
+PkCheck.y<==PKy;
 
 
     // -----------------------------
