@@ -101,13 +101,13 @@ template ElGamalCheck() {
     signal input m;
 
 // Generator points in edward curve 
- var Gx = 5299619240641551281634865583518297030282874472190772894086521144482721001553;
+  var Gx = 5299619240641551281634865583518297030282874472190772894086521144482721001553;
   var Gy = 16950150798460657717958625567821834550301663161624707787222815936182638968203;
 
 // check if m is not zero 
-component isZero= IsZero();
-isZero.in<==m;
-isZero.out===0;
+    component isZero= IsZero();
+    isZero.in<==m;
+    isZero.out===0;
 
     // r bits
     component rBits = Num2Bits(253);
@@ -118,12 +118,12 @@ isZero.out===0;
     mBits.in <== m;
 
 
-component rG = EscalarMulFix(253, [Gx,Gy]);
+    component rG = EscalarMulFix(253, [Gx,Gy]);
 for (var i = 0; i < 253; i++) {
     rG.e[i] <== rBits.out[i];
 }
-signal Rx <== rG.out[0];
-signal Ry <== rG.out[1];
+    signal Rx <== rG.out[0];
+    signal Ry <== rG.out[1];
 
 
     // enforce C1 == rG
@@ -135,13 +135,13 @@ signal Ry <== rG.out[1];
 for (var i = 0; i < 253; i++) {
     mG.e[i] <== mBits.out[i];
 }
-signal Mx <== mG.out[0];
-signal My <== mG.out[1];
+    signal Mx <== mG.out[0];
+    signal My <== mG.out[1];
 
 // Baby check for the public keys 
-component PkCheck = BabyCheck();
-PkCheck.x<==PKx;
-PkCheck.y<==PKy;
+    component PkCheck = BabyCheck();
+    PkCheck.x<==PKx;
+    PkCheck.y<==PKy;
 
 
     // -----------------------------
